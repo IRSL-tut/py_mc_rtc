@@ -57,6 +57,12 @@ PYBIND11_MODULE(PyMcRtc, m) {
     .def("setSensorPose", [](PyMC_RTC_Controller &self, const refVec3 pos, const refVec4 quat) {
         return self.setSensorPose(pos, quat);
     })
+    .def("setSensorLinearVelocity", [](PyMC_RTC_Controller &self, const refVec3 vel) {
+        return self.setSensorLinearVelocity(vel);
+    })
+    .def("setSensorAngularVelocity", [](PyMC_RTC_Controller &self, const refVec3 rate) {
+        return self.setSensorAngularVelocity(rate);
+    })
     .def("setSensorVelocity", [](PyMC_RTC_Controller &self, const refVec3 vel, const refVec3 rate) {
         return self.setSensorVelocity(vel, rate);
     })
@@ -116,7 +122,14 @@ PYBIND11_MODULE(PyMcRtc, m) {
         return invec;
 #endif
     })
+    .def("getPose", [](PyMC_RTC_Controller &self) {
+        std::vector<double> invec;
+        self.getPose(invec);
+        return invec;
+    })
     ////
     .def("run", &PyMC_RTC_Controller::run)
+    ////
+    .def("setVerbose", &PyMC_RTC_Controller::setVerbose)
     ;
 }

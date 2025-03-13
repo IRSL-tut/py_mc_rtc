@@ -17,7 +17,7 @@
 class PyMC_RTC_Controller::Impl
 {
 public:
-    Impl() {
+    Impl() : verbose(false) {
         numJoints = controller.robot().refJointOrder().size();
     };
 public:
@@ -27,6 +27,7 @@ public:
     inline bool checkSize(const std::vector<double> &vec) {
         return (vec.size() == numJoints);
     }
+    bool verbose;
 };
 
 PyMC_RTC_Controller::PyMC_RTC_Controller () {
@@ -97,7 +98,7 @@ void PyMC_RTC_Controller::setRunning(bool run)
 {
     impl->controller.running = run;
 }
-
+#define pv3(vec) vec(0) << ", " << vec(1) << ", " << vec(2)
 ////
 bool PyMC_RTC_Controller::initController(const std::vector<double> &in_vec)
 {
@@ -110,8 +111,25 @@ bool PyMC_RTC_Controller::initController(const std::vector<double> &in_vec)
 bool PyMC_RTC_Controller::setSensorPose(const vec3 &pos, const vec4 &quat)
 {
     Eigen::Quaterniond qIn(quat);
+    if (impl->verbose) {
+        std::cerr << "rpyIn(q) : " << qIn.x() << ", " << qIn.y() << ", " << qIn.z() << ", " << qIn.w() << std::endl;
+        std::cerr << "pIn : " << pv3(pos) << std::endl;
+    }
     impl->controller.setSensorOrientation(qIn);
     impl->controller.setSensorPosition(pos);
+    return true;
+}
+bool PyMC_RTC_Controller::setSensorLinearVelocity(const vec3 &vel)
+{
+    impl->controller.setSensorLinearVelocity(vel);
+    return true;
+}
+bool PyMC_RTC_Controller::setSensorAngularVelocity(const vec3 &rate)
+{
+    if (impl->verbose) {
+        std::cerr << "rateIn : " << pv3(rate) << std::endl;
+    }
+    impl->controller.setSensorAngularVelocity(rate);
     return true;
 }
 bool PyMC_RTC_Controller::setSensorVelocity(const vec3 &vel, const vec3 &rate)
@@ -122,12 +140,22 @@ bool PyMC_RTC_Controller::setSensorVelocity(const vec3 &vel, const vec3 &rate)
 }
 bool PyMC_RTC_Controller::setSensorAcceleration(const vec3 &acc)
 {
+    if (impl->verbose) {
+        std::cerr << "accIn : " << pv3(acc) << std::endl;
+    }
     impl->controller.setSensorLinearAcceleration(acc);
     return true;
 }
 bool PyMC_RTC_Controller::setEncoderValues(const std::vector<double> &in_vec)
 {
     if (impl->checkSize(in_vec)) {
+        if (impl->verbose) {
+            std::cerr << "qIn : ";
+            for (size_t i = 0; i < in_vec.size(); i++) {
+                std::cerr << in_vec[i] << " ";
+            }
+            std::cerr << std::endl;
+        }
         impl->controller.setEncoderValues(in_vec);
         return true;
     }
@@ -154,7 +182,14 @@ bool PyMC_RTC_Controller::setWrenches(const std::vector<std::string> &names, con
     if (names.size() == f.size() && names.size() == tau.size()) {
         std::map<std::string, sva::ForceVecd> m_wrenches;
         for (size_t i = 0; i < names.size(); i++) {
-            m_wrenches[ names[i] ] = sva::ForceVecd(f[i], tau[i]);
+            const auto wname = names[i];
+            m_wrenches[ wname ] = sva::ForceVecd(tau[i], f[i]);
+        }
+        if (impl->verbose) {
+            for(int i = 0; i < 2; i++) {
+                std::cerr << "f" << i << " : " << pv3(m_wrenches[names[i]].force()) << std::endl;
+                std::cerr << "tau" << i << " : " << pv3(m_wrenches[names[i]].couple()) << std::endl;
+            }
         }
         impl->controller.setWrenches(m_wrenches);
         return true;
@@ -163,17 +198,17 @@ bool PyMC_RTC_Controller::setWrenches(const std::vector<std::string> &names, con
 }
 
 ////
-bool PyMC_RTC_Controller::getTargetValues(std::vector<double> &in_vec)
+bool PyMC_RTC_Controller::getTargetValues(std::vector<double> &result)
 {
-    if (!impl->checkSize(in_vec)) {
-        in_vec.resize(impl->numJoints);
+    if (!impl->checkSize(result)) {
+        result.resize(impl->numJoints);
     }
     const auto & ref_joint_order = impl->controller.robot().refJointOrder();
     const auto & qOut = impl->controller.robot().mbc().q;
     for(size_t i = 0; i < ref_joint_order.size(); ++i) {
         auto jIdx = impl->controller.robot().jointIndexInMBC(i);
         if(jIdx != -1 && qOut[static_cast<size_t>(jIdx)].size() == 1) {
-            in_vec[i] = qOut[ static_cast<size_t>(jIdx) ][0];
+            result[i] = qOut[ static_cast<size_t>(jIdx) ][0];
         } else {
             //// warning
             std::cerr << "WARN: i = " << i <<", jIdx = " << jIdx << ", qOut.size = " << qOut[static_cast<size_t>(jIdx)].size() << std::endl;
@@ -181,9 +216,36 @@ bool PyMC_RTC_Controller::getTargetValues(std::vector<double> &in_vec)
     }
     return true;
 }
+bool PyMC_RTC_Controller::getPose(std::vector<double> &result)
+{
+    if (result.size() != 7) {
+        result.resize(7);
+    }
+    const auto & qOut = impl->controller.robot().mbc().q;
+    const auto & ff_state = qOut[0];
+    if(ff_state.size()) {
+        Eigen::Quaterniond q(ff_state[0], ff_state[1], ff_state[2], ff_state[3]);
+        result[3] = q.x();
+        result[4] = q.y();
+        result[5] = q.z();
+        result[6] = q.w();
+        //
+        result[0] = ff_state[4];
+        result[1] = ff_state[5];
+        result[2] = ff_state[6];
+        return true;
+    }
+    return false;
+}
 
 ////
 bool PyMC_RTC_Controller::run()
 {
     return impl->controller.run();
+}
+
+////
+void PyMC_RTC_Controller::setVerbose(bool on)
+{
+    impl->verbose = on;
 }

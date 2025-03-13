@@ -23,6 +23,8 @@ public:
 public:
     bool initController(const std::vector<double> &in_vec);
     bool setSensorPose(const vec3 &pos, const vec4 &quat);
+    bool setSensorLinearVelocity(const vec3 &vel);
+    bool setSensorAngularVelocity(const vec3 &rate);
     bool setSensorVelocity(const vec3 &vel, const vec3 &rate);
     bool setSensorAcceleration(const vec3 &acc);
     bool setEncoderValues(const std::vector<double> &in_vec);
@@ -32,11 +34,16 @@ public:
 
     ////
 public:
-    bool getTargetValues(std::vector<double> &in_vec);
+    bool getTargetValues(std::vector<double> &result);
+    bool getPose(std::vector<double> &result);
 
     ////
 public:
     bool run();
+
+    ////
+public:
+    void setVerbose(bool on);
 
 private:
     class Impl;
